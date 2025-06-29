@@ -291,6 +291,13 @@ function pointInRect(x, y, r) {
 </script>
 {% endif %}
 </div>
+
+<footer style="text-align:center; margin-top:40px; padding:15px 0; font-size:0.9rem; color:#888;">
+  Made with ❤️ by <a href="https://github.com/imvickykumar999/Image-Resizer" target="_blank" style="color:#3498db; text-decoration:none;">
+    @imvickykumar999
+  </a><br>
+</footer>
+
 </body>
 </html>
 """
