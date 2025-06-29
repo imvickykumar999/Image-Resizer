@@ -1,6 +1,8 @@
-# Image-Resizer
+# `Image Resizer`
 
     One solution to avoid SSC student filteration strategy.
+
+![image](https://github.com/user-attachments/assets/41880e8d-e847-449e-9908-d78d1f84c5e9)
 
 ### 📌 **1. DPI (Dots Per Inch)**
 
