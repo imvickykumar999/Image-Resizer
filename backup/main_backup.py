@@ -20,7 +20,6 @@ class ImageCropper:
             self.root.destroy()
             return
         self.image_path = filepath
-        print(filepath)
         self.get_user_inputs()
 
     def get_user_inputs(self):
@@ -163,9 +162,9 @@ class ImageCropper:
             resized.save(buffer, format="JPEG", quality=quality, dpi=(self.dpi, self.dpi))
             kb_size = len(buffer.getvalue()) / 1024
             if kb_size <= self.target_kb:
-                with open("images/final_photo.jpg", "wb") as f:
+                with open("images/final_output.jpg", "wb") as f:
                     f.write(buffer.getvalue())
-                messagebox.showinfo("Success", f"Saved as images/final_photo.jpg\nSize: {int(kb_size)} KB")
+                messagebox.showinfo("Success", f"Saved as images/final_output.jpg\nSize: {int(kb_size)} KB")
                 return
             quality -= 5
 
