@@ -1,14 +1,25 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from PIL import Image, ImageTk
 import io
 import os
 
 class ImageCropper:
-    def __init__(self, root, image_path):
+    def __init__(self, root):
         self.root = root
         self.root.withdraw()  # Hide main window initially
-        self.image_path = image_path
+        self.select_input_image()
+
+    def select_input_image(self):
+        filepath = filedialog.askopenfilename(
+            title="Select input.jpg",
+            filetypes=[("JPEG files", "*.jpg"), ("All files", "*.*")]
+        )
+        if not filepath:
+            messagebox.showerror("Error", "No image selected.")
+            self.root.destroy()
+            return
+        self.image_path = filepath
         self.get_user_inputs()
 
     def get_user_inputs(self):
@@ -39,7 +50,6 @@ class ImageCropper:
         tk.Button(self.input_window, text="Next", command=self.setup_canvas).pack(pady=10)
 
     def setup_canvas(self):
-        # Read input values
         try:
             self.target_kb = int(self.size_entry.get())
             self.width_cm = float(self.width_entry.get())
@@ -51,7 +61,7 @@ class ImageCropper:
 
         self.aspect_ratio = self.width_cm / self.height_cm
         self.input_window.destroy()
-        self.root.deiconify()  # Show main window now
+        self.root.deiconify()
 
         self.image = Image.open(self.image_path)
         self.tk_image = ImageTk.PhotoImage(self.image)
@@ -76,7 +86,6 @@ class ImageCropper:
         self.crop_button = tk.Button(self.root, text="Crop and Save", command=self.process_crop)
         self.crop_button.pack(pady=5)
 
-        # Bindings
         self.rect = None
         self.start_x = self.start_y = None
         self.crop_coords = None
@@ -143,7 +152,7 @@ class ImageCropper:
         px_height = int((self.dpi / 2.54) * self.height_cm)
         resized = cropped.resize((px_width, px_height), Image.Resampling.LANCZOS)
 
-        # Ensure images/ directory exists
+        # Ensure images/ folder exists
         os.makedirs("images", exist_ok=True)
 
         # Compress
@@ -163,5 +172,5 @@ class ImageCropper:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ImageCropper(root, "images/input.jpg")
+    app = ImageCropper(root)
     root.mainloop()

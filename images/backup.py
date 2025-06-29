@@ -2,16 +2,17 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 import io
+import os
 
 class ImageCropper:
     def __init__(self, root, image_path):
         self.root = root
-        self.root.title("Image Cropper")
+        self.root.withdraw()  # Hide main window initially
         self.image_path = image_path
         self.get_user_inputs()
 
     def get_user_inputs(self):
-        self.input_window = tk.Toplevel(self.root)
+        self.input_window = tk.Toplevel()
         self.input_window.title("Enter Image Output Settings")
         self.input_window.geometry("300x250")
 
@@ -38,7 +39,7 @@ class ImageCropper:
         tk.Button(self.input_window, text="Next", command=self.setup_canvas).pack(pady=10)
 
     def setup_canvas(self):
-        # Read values
+        # Read input values
         try:
             self.target_kb = int(self.size_entry.get())
             self.width_cm = float(self.width_entry.get())
@@ -50,12 +51,11 @@ class ImageCropper:
 
         self.aspect_ratio = self.width_cm / self.height_cm
         self.input_window.destroy()
+        self.root.deiconify()  # Show main window now
 
-        # Load image
         self.image = Image.open(self.image_path)
         self.tk_image = ImageTk.PhotoImage(self.image)
 
-        # Scrollable canvas
         self.outer_frame = tk.Frame(self.root)
         self.outer_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -73,44 +73,64 @@ class ImageCropper:
         self.canvas_image = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
         self.canvas.config(scrollregion=(0, 0, self.image.width, self.image.height))
 
-        # Mouse bindings
-        self.start_x = self.start_y = self.rect = None
-        self.crop_coords = None
-        self.canvas.bind("<ButtonPress-1>", self.on_button_press)
-        self.canvas.bind("<B1-Motion>", self.on_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_release)
-
         self.crop_button = tk.Button(self.root, text="Crop and Save", command=self.process_crop)
         self.crop_button.pack(pady=5)
 
-    def on_button_press(self, event):
-        self.start_x = self.canvas.canvasx(event.x)
-        self.start_y = self.canvas.canvasy(event.y)
+        # Bindings
+        self.rect = None
+        self.start_x = self.start_y = None
+        self.crop_coords = None
+        self.dragging = False
+        self.drag_offset_x = self.drag_offset_y = 0
+
+        self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
+        self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_mouse_up)
+
+    def on_mouse_down(self, event):
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
+
+        if self.rect:
+            x1, y1, x2, y2 = self.canvas.coords(self.rect)
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                self.dragging = True
+                self.drag_offset_x = x - x1
+                self.drag_offset_y = y - y1
+                return
+
+        self.dragging = False
+        self.start_x, self.start_y = x, y
         if self.rect:
             self.canvas.delete(self.rect)
-        self.rect = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y, outline='red')
+        self.rect = self.canvas.create_rectangle(x, y, x, y, outline='red')
 
-    def on_drag(self, event):
-        cur_x = self.canvas.canvasx(event.x)
-        cur_y = self.canvas.canvasy(event.y)
+    def on_mouse_drag(self, event):
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
 
-        # Constrain to aspect ratio
-        dx = cur_x - self.start_x
-        dy = cur_y - self.start_y
+        if self.dragging and self.rect:
+            x1, y1, x2, y2 = self.canvas.coords(self.rect)
+            new_x1 = x - self.drag_offset_x
+            new_y1 = y - self.drag_offset_y
+            width = x2 - x1
+            height = y2 - y1
+            self.canvas.coords(self.rect, new_x1, new_y1, new_x1 + width, new_y1 + height)
+        elif self.start_x and self.start_y:
+            dx = x - self.start_x
+            dy = y - self.start_y
+            if abs(dx) > abs(dy):
+                dy = dx / self.aspect_ratio
+            else:
+                dx = dy * self.aspect_ratio
+            new_x = self.start_x + dx
+            new_y = self.start_y + dy
+            self.canvas.coords(self.rect, self.start_x, self.start_y, new_x, new_y)
 
-        if abs(dx) > abs(dy):
-            dy = dx / self.aspect_ratio
-        else:
-            dx = dy * self.aspect_ratio
-
-        new_x = self.start_x + dx
-        new_y = self.start_y + dy
-
-        self.canvas.coords(self.rect, self.start_x, self.start_y, new_x, new_y)
-
-    def on_release(self, event):
-        coords = self.canvas.coords(self.rect)
-        self.crop_coords = tuple(map(int, coords))
+    def on_mouse_up(self, event):
+        if self.rect:
+            self.crop_coords = tuple(map(int, self.canvas.coords(self.rect)))
+        self.dragging = False
 
     def process_crop(self):
         if not self.crop_coords:
@@ -119,12 +139,14 @@ class ImageCropper:
 
         cropped = self.image.crop(self.crop_coords)
 
-        # Resize
         px_width = int((self.dpi / 2.54) * self.width_cm)
         px_height = int((self.dpi / 2.54) * self.height_cm)
         resized = cropped.resize((px_width, px_height), Image.Resampling.LANCZOS)
 
-        # Compress to target size
+        # Ensure images/ directory exists
+        os.makedirs("images", exist_ok=True)
+
+        # Compress
         quality = 95
         while quality > 10:
             buffer = io.BytesIO()
