@@ -17,50 +17,87 @@ HTML_PAGE = """
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Image Cropper</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    max-width: 900px;
-    margin: 20px auto;
-    padding: 0 10px;
-  }
-  h2, h3 { text-align: center; }
-  form > label {
-    display: block;
-    margin: 10px 0 5px;
-    font-weight: bold;
-  }
-  input[type="file"], input[type="number"] {
-    width: 100%;
-    max-width: 300px;
-    padding: 6px;
-    box-sizing: border-box;
-  }
-  button {
-    margin-top: 15px;
-    padding: 10px 20px;
-    font-size: 1rem;
-    cursor: pointer;
-  }
-  canvas {
-    display: block;
-    margin: 20px auto;
-    border: 2px solid #ccc;
-    max-width: 100%;
-    touch-action: none;
-  }
-  #crop-info {
-    text-align: center;
-    font-weight: bold;
-    margin-top: 5px;
-  }
-  ul.flashes {
-    color: red;
-    list-style: none;
-    padding-left: 0;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #f4f7fa;
+  color: #333;
+  line-height: 1.6;
+  padding: 20px;
+}
+.container {
+  max-width: 700px;
+  margin: auto;
+  background: #fff;
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+h2, h3 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+ul.flashes {
+  list-style: none;
+  padding-left: 0;
+  color: red;
+  margin-bottom: 15px;
+  text-align: center;
+}
+form label {
+  display: block;
+  margin-top: 15px;
+  font-weight: 600;
+}
+input[type="file"],
+input[type="number"] {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+button {
+  margin-top: 20px;
+  background: #3498db;
+  color: #fff;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  display: block;
+  width: 100%;
+}
+button:hover {
+  background: #2980b9;
+}
+canvas {
+  display: block;
+  margin: 30px auto;
+  border: 2px dashed #ccc;
+  max-width: 100%;
+  height: auto;
+  touch-action: none;
+  border-radius: 8px;
+}
+#crop-info {
+  text-align: center;
+  font-weight: 600;
+  color: #555;
+  margin-top: 10px;
+}
 </style>
 </head>
 <body>
+  <div class="container">
   <h2>Image Cropper with Fixed Aspect Ratio</h2>
 
   {% with messages = get_flashed_messages() %}
@@ -90,7 +127,7 @@ HTML_PAGE = """
   {% if img_url %}
   <h3>Crop the image</h3>
   <canvas id="canvas"></canvas>
-  <div id="crop-info">Drag to select area. Aspect ratio is fixed. After selection, drag rectangle to move it.</div>
+  <div id="crop-info">Drag to select area. Aspect ratio is fixed. Touch supported.</div>
 
   <form method="post" action="{{ url_for('crop') }}">
     <input type="hidden" name="filename" value="{{ filename }}">
@@ -112,7 +149,7 @@ const img = new Image();
 img.src = "{{ img_url }}";
 
 let aspectRatio = {{ width_cm / height_cm }};
-let rect = null;  // {x, y, w, h}
+let rect = null;
 let drag = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
@@ -122,9 +159,11 @@ function getMousePos(e) {
   const rectCanvas = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rectCanvas.width;
   const scaleY = canvas.height / rectCanvas.height;
+  const clientX = e.clientX || e.pageX;
+  const clientY = e.clientY || e.pageY;
   return {
-    x: (e.clientX - rectCanvas.left) * scaleX,
-    y: (e.clientY - rectCanvas.top) * scaleY
+    x: (clientX - rectCanvas.left) * scaleX,
+    y: (clientY - rectCanvas.top) * scaleY
   };
 }
 
@@ -133,122 +172,125 @@ img.onload = () => {
   canvas.height = img.height;
   draw();
 
-  canvas.addEventListener('mousedown', e => {
-    const pos = getMousePos(e);
-    if (rect && pointInRect(pos.x, pos.y, rect)) {
-      drag = true;
-      dragOffsetX = pos.x - rect.x;
-      dragOffsetY = pos.y - rect.y;
-      isDrawing = false;
-    } else {
-      // Start drawing new rect
-      rect = { x: pos.x, y: pos.y, w: 0, h: 0 };
-      isDrawing = true;
-      drag = false;
-    }
-  });
+  canvas.addEventListener('mousedown', handleStart);
+  canvas.addEventListener('mousemove', handleMove);
+  canvas.addEventListener('mouseup', handleEnd);
+  canvas.addEventListener('mouseout', handleEnd);
 
-  canvas.addEventListener('mousemove', e => {
-    const pos = getMousePos(e);
-    if (drag && rect) {
-      // Move rect but keep inside canvas
-      let newX = pos.x - dragOffsetX;
-      let newY = pos.y - dragOffsetY;
-
-      newX = Math.min(Math.max(0, newX), canvas.width - rect.w);
-      newY = Math.min(Math.max(0, newY), canvas.height - rect.h);
-
-      rect.x = newX;
-      rect.y = newY;
-      draw();
-      updateForm();
-    } else if (isDrawing && rect) {
-      // Calculate size while keeping aspect ratio
-      let dx = pos.x - rect.x;
-      let dy = pos.y - rect.y;
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        dy = dx / aspectRatio;
-      } else {
-        dx = dy * aspectRatio;
-      }
-
-      // Adjust if out of canvas bounds
-      if (rect.x + dx > canvas.width) {
-        dx = canvas.width - rect.x;
-        dy = dx / aspectRatio;
-      }
-      if (rect.y + dy > canvas.height) {
-        dy = canvas.height - rect.y;
-        dx = dy * aspectRatio;
-      }
-      if (rect.x + dx < 0) {
-        dx = -rect.x;
-        dy = dx / aspectRatio;
-      }
-      if (rect.y + dy < 0) {
-        dy = -rect.y;
-        dx = dy * aspectRatio;
-      }
-
-      rect.w = dx;
-      rect.h = dy;
-      draw();
-    }
-  });
-
-  canvas.addEventListener('mouseup', e => {
-    if (isDrawing) {
-      // Make width/height positive and adjust x,y accordingly
-      if (rect.w < 0) {
-        rect.x += rect.w;
-        rect.w = -rect.w;
-      }
-      if (rect.h < 0) {
-        rect.y += rect.h;
-        rect.h = -rect.h;
-      }
-    }
-    drag = false;
-    isDrawing = false;
-    updateForm();
-  });
-
-  canvas.addEventListener('mouseout', e => {
-    drag = false;
-    isDrawing = false;
-  });
-
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
-    if (rect) {
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([6]);
-      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    }
-  }
-
-  function updateForm() {
-    if (!rect) return;
-    document.getElementById('crop_x').value = Math.round(rect.x);
-    document.getElementById('crop_y').value = Math.round(rect.y);
-    document.getElementById('crop_w').value = Math.round(rect.w);
-    document.getElementById('crop_h').value = Math.round(rect.h);
-    document.getElementById('crop-info').textContent =
-      `Crop area: ${Math.round(rect.w)} x ${Math.round(rect.h)} px`;
-  }
-
-  function pointInRect(x, y, r) {
-    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  }
+  canvas.addEventListener('touchstart', e => handleStart(e.touches[0]));
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    handleMove(e.touches[0]);
+  }, { passive: false });
+  canvas.addEventListener('touchend', handleEnd);
 };
+
+function handleStart(e) {
+  const pos = getMousePos(e);
+  if (rect && pointInRect(pos.x, pos.y, rect)) {
+    drag = true;
+    dragOffsetX = pos.x - rect.x;
+    dragOffsetY = pos.y - rect.y;
+    isDrawing = false;
+  } else {
+    rect = { x: pos.x, y: pos.y, w: 0, h: 0 };
+    isDrawing = true;
+    drag = false;
+  }
+}
+
+function handleMove(e) {
+  const pos = getMousePos(e);
+  if (drag && rect) {
+    let newX = pos.x - dragOffsetX;
+    let newY = pos.y - dragOffsetY;
+
+    newX = Math.min(Math.max(0, newX), canvas.width - rect.w);
+    newY = Math.min(Math.max(0, newY), canvas.height - rect.h);
+
+    rect.x = newX;
+    rect.y = newY;
+    draw();
+    updateForm();
+  } else if (isDrawing && rect) {
+    let dx = pos.x - rect.x;
+    let dy = pos.y - rect.y;
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      dy = dx / aspectRatio;
+    } else {
+      dx = dy * aspectRatio;
+    }
+
+    if (rect.x + dx > canvas.width) {
+      dx = canvas.width - rect.x;
+      dy = dx / aspectRatio;
+    }
+    if (rect.y + dy > canvas.height) {
+      dy = canvas.height - rect.y;
+      dx = dy * aspectRatio;
+    }
+    if (rect.x + dx < 0) {
+      dx = -rect.x;
+      dy = dx / aspectRatio;
+    }
+    if (rect.y + dy < 0) {
+      dy = -rect.y;
+      dx = dy * aspectRatio;
+    }
+
+    rect.w = dx;
+    rect.h = dy;
+    draw();
+  }
+}
+
+function handleEnd(e) {
+  if (isDrawing) {
+    if (rect.w < 0) {
+      rect.x += rect.w;
+      rect.w = -rect.w;
+    }
+    if (rect.h < 0) {
+      rect.y += rect.h;
+      rect.h = -rect.h;
+    }
+  }
+  drag = false;
+  isDrawing = false;
+  updateForm();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  if (rect) {
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6]);
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+  }
+}
+
+function updateForm() {
+  if (!rect) return;
+  document.getElementById('crop_x').value = Math.round(rect.x);
+  document.getElementById('crop_y').value = Math.round(rect.y);
+  document.getElementById('crop_w').value = Math.round(rect.w);
+  document.getElementById('crop_h').value = Math.round(rect.h);
+  document.getElementById('crop-info').textContent =
+    `Crop area: ${Math.round(rect.w)} x ${Math.round(rect.h)} px`;
+}
+
+function pointInRect(x, y, r) {
+  return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
 </script>
 {% endif %}
+</div>
 </body>
 </html>
 """
@@ -301,7 +343,6 @@ def crop():
 
     path = os.path.join(UPLOAD_FOLDER, filename)
     image = Image.open(path)
-
     cropped = image.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
 
     px_width = int((dpi / 2.54) * width_cm)
@@ -325,4 +366,4 @@ def crop():
     return send_file(buffer, as_attachment=True, download_name="final_output.jpg", mimetype="image/jpeg")
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0")
