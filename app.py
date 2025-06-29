@@ -4,167 +4,251 @@ import io
 import os
 
 app = Flask(__name__)
-app.secret_key = 'secret123'  # for flashing messages
+app.secret_key = 'secret123'
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 HTML_PAGE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Image Cropper</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; }
-        canvas { border: 1px solid #ccc; cursor: crosshair; }
-        label { display: block; margin-top: 10px; }
-        input[type="number"] { width: 100px; }
-        #crop-info { margin-top: 10px; font-weight: bold; }
-        button { margin-top: 10px; padding: 8px 16px; }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Image Cropper</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 10px;
+  }
+  h2, h3 { text-align: center; }
+  form > label {
+    display: block;
+    margin: 10px 0 5px;
+    font-weight: bold;
+  }
+  input[type="file"], input[type="number"] {
+    width: 100%;
+    max-width: 300px;
+    padding: 6px;
+    box-sizing: border-box;
+  }
+  button {
+    margin-top: 15px;
+    padding: 10px 20px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  canvas {
+    display: block;
+    margin: 20px auto;
+    border: 2px solid #ccc;
+    max-width: 100%;
+    touch-action: none;
+  }
+  #crop-info {
+    text-align: center;
+    font-weight: bold;
+    margin-top: 5px;
+  }
+  ul.flashes {
+    color: red;
+    list-style: none;
+    padding-left: 0;
+  }
+</style>
 </head>
 <body>
-    <h2>Image Cropper with Fixed Aspect Ratio</h2>
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <ul style="color:red;">
-          {% for msg in messages %}
-            <li>{{msg}}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    {% endwith %}
-    <form method="post" enctype="multipart/form-data" id="upload-form">
-        <label>Select Image (jpg/png): <input type="file" name="image" accept="image/*" required></label>
-        <label>Target File Size (KB): <input type="number" name="target_kb" value="15" min="1" required></label>
-        <label>Width (cm): <input type="number" step="0.01" name="width_cm" value="6" min="0.1" required></label>
-        <label>Height (cm): <input type="number" step="0.01" name="height_cm" value="2" min="0.1" required></label>
-        <label>DPI: <input type="number" name="dpi" value="300" min="1" required></label>
-        <button type="submit">Upload & Crop</button>
-    </form>
+  <h2>Image Cropper with Fixed Aspect Ratio</h2>
 
-    {% if img_url %}
-    <h3>Crop the image</h3>
-    <canvas id="canvas"></canvas>
-    <div id="crop-info">Drag to select area. Aspect ratio is fixed.</div>
-    <form method="post" action="{{ url_for('crop') }}">
-        <input type="hidden" name="filename" value="{{ filename }}">
-        <input type="hidden" id="crop_x" name="crop_x">
-        <input type="hidden" id="crop_y" name="crop_y">
-        <input type="hidden" id="crop_w" name="crop_w">
-        <input type="hidden" id="crop_h" name="crop_h">
-        <input type="hidden" name="target_kb" value="{{ target_kb }}">
-        <input type="hidden" name="width_cm" value="{{ width_cm }}">
-        <input type="hidden" name="height_cm" value="{{ height_cm }}">
-        <input type="hidden" name="dpi" value="{{ dpi }}">
-        <button type="submit">Crop & Download</button>
-    </form>
-
-    <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-        img.src = "{{ img_url }}";
-        let rect = {};
-        let drag = false;
-        let aspectRatio = {{ width_cm / height_cm }};
-
-        img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-
-            canvas.addEventListener('mousedown', (e) => {
-                const rectCanvas = canvas.getBoundingClientRect();
-                rect.startX = e.clientX - rectCanvas.left;
-                rect.startY = e.clientY - rectCanvas.top;
-                rect.w = 0;
-                rect.h = 0;
-                drag = true;
-                draw();
-            });
-
-            canvas.addEventListener('mousemove', (e) => {
-                if (drag) {
-                    const rectCanvas = canvas.getBoundingClientRect();
-                    let mouseX = e.clientX - rectCanvas.left;
-                    let mouseY = e.clientY - rectCanvas.top;
-
-                    let dx = mouseX - rect.startX;
-                    let dy = mouseY - rect.startY;
-
-                    // Constrain to aspect ratio
-                    if (Math.abs(dx) > Math.abs(dy)) {
-                        dy = dx / aspectRatio;
-                    } else {
-                        dx = dy * aspectRatio;
-                    }
-
-                    rect.w = dx;
-                    rect.h = dy;
-
-                    // Prevent selection outside image bounds
-                    if (rect.startX + rect.w > canvas.width) {
-                        rect.w = canvas.width - rect.startX;
-                        rect.h = rect.w / aspectRatio;
-                    }
-                    if (rect.startY + rect.h > canvas.height) {
-                        rect.h = canvas.height - rect.startY;
-                        rect.w = rect.h * aspectRatio;
-                    }
-                    if (rect.startX + rect.w < 0) {
-                        rect.w = -rect.startX;
-                        rect.h = rect.w / aspectRatio;
-                    }
-                    if (rect.startY + rect.h < 0) {
-                        rect.h = -rect.startY;
-                        rect.w = rect.h * aspectRatio;
-                    }
-
-                    draw();
-                }
-            });
-
-            canvas.addEventListener('mouseup', (e) => {
-                drag = false;
-                updateForm();
-            });
-
-            canvas.addEventListener('mouseout', (e) => {
-                if(drag) {
-                    drag = false;
-                    updateForm();
-                }
-            });
-
-            function draw() {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0);
-                if (rect.w && rect.h) {
-                    ctx.strokeStyle = 'red';
-                    ctx.lineWidth = 3;
-                    ctx.setLineDash([6]);
-                    ctx.strokeRect(rect.startX, rect.startY, rect.w, rect.h);
-                    ctx.setLineDash([]);
-                    ctx.fillStyle = 'rgba(255,0,0,0.2)';
-                    ctx.fillRect(rect.startX, rect.startY, rect.w, rect.h);
-                }
-            }
-
-            function updateForm() {
-                const x = Math.min(rect.startX, rect.startX + rect.w);
-                const y = Math.min(rect.startY, rect.startY + rect.h);
-                const w = Math.abs(rect.w);
-                const h = Math.abs(rect.h);
-                document.getElementById('crop_x').value = Math.round(x);
-                document.getElementById('crop_y').value = Math.round(y);
-                document.getElementById('crop_w').value = Math.round(w);
-                document.getElementById('crop_h').value = Math.round(h);
-                document.getElementById('crop-info').textContent = `Crop area: ${Math.round(w)} x ${Math.round(h)} px`;
-            }
-        };
-    </script>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul class="flashes">
+      {% for msg in messages %}
+        <li>{{ msg }}</li>
+      {% endfor %}
+      </ul>
     {% endif %}
+  {% endwith %}
+
+  <form method="post" enctype="multipart/form-data" id="upload-form">
+    <label>Select Image (jpg/png):</label>
+    <input type="file" name="image" accept="image/*" required />
+    <label>Target File Size (KB):</label>
+    <input type="number" name="target_kb" value="15" min="1" required />
+    <label>Width (cm):</label>
+    <input type="number" step="0.01" name="width_cm" value="6" min="0.1" required />
+    <label>Height (cm):</label>
+    <input type="number" step="0.01" name="height_cm" value="2" min="0.1" required />
+    <label>DPI:</label>
+    <input type="number" name="dpi" value="300" min="1" required />
+    <button type="submit">Upload & Crop</button>
+  </form>
+
+  {% if img_url %}
+  <h3>Crop the image</h3>
+  <canvas id="canvas"></canvas>
+  <div id="crop-info">Drag to select area. Aspect ratio is fixed. After selection, drag rectangle to move it.</div>
+
+  <form method="post" action="{{ url_for('crop') }}">
+    <input type="hidden" name="filename" value="{{ filename }}">
+    <input type="hidden" id="crop_x" name="crop_x">
+    <input type="hidden" id="crop_y" name="crop_y">
+    <input type="hidden" id="crop_w" name="crop_w">
+    <input type="hidden" id="crop_h" name="crop_h">
+    <input type="hidden" name="target_kb" value="{{ target_kb }}">
+    <input type="hidden" name="width_cm" value="{{ width_cm }}">
+    <input type="hidden" name="height_cm" value="{{ height_cm }}">
+    <input type="hidden" name="dpi" value="{{ dpi }}">
+    <button type="submit">Crop & Download</button>
+  </form>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+img.src = "{{ img_url }}";
+
+let aspectRatio = {{ width_cm / height_cm }};
+let rect = null;  // {x, y, w, h}
+let drag = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let isDrawing = false;
+
+function getMousePos(e) {
+  const rectCanvas = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rectCanvas.width;
+  const scaleY = canvas.height / rectCanvas.height;
+  return {
+    x: (e.clientX - rectCanvas.left) * scaleX,
+    y: (e.clientY - rectCanvas.top) * scaleY
+  };
+}
+
+img.onload = () => {
+  canvas.width = img.width;
+  canvas.height = img.height;
+  draw();
+
+  canvas.addEventListener('mousedown', e => {
+    const pos = getMousePos(e);
+    if (rect && pointInRect(pos.x, pos.y, rect)) {
+      drag = true;
+      dragOffsetX = pos.x - rect.x;
+      dragOffsetY = pos.y - rect.y;
+      isDrawing = false;
+    } else {
+      // Start drawing new rect
+      rect = { x: pos.x, y: pos.y, w: 0, h: 0 };
+      isDrawing = true;
+      drag = false;
+    }
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    const pos = getMousePos(e);
+    if (drag && rect) {
+      // Move rect but keep inside canvas
+      let newX = pos.x - dragOffsetX;
+      let newY = pos.y - dragOffsetY;
+
+      newX = Math.min(Math.max(0, newX), canvas.width - rect.w);
+      newY = Math.min(Math.max(0, newY), canvas.height - rect.h);
+
+      rect.x = newX;
+      rect.y = newY;
+      draw();
+      updateForm();
+    } else if (isDrawing && rect) {
+      // Calculate size while keeping aspect ratio
+      let dx = pos.x - rect.x;
+      let dy = pos.y - rect.y;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        dy = dx / aspectRatio;
+      } else {
+        dx = dy * aspectRatio;
+      }
+
+      // Adjust if out of canvas bounds
+      if (rect.x + dx > canvas.width) {
+        dx = canvas.width - rect.x;
+        dy = dx / aspectRatio;
+      }
+      if (rect.y + dy > canvas.height) {
+        dy = canvas.height - rect.y;
+        dx = dy * aspectRatio;
+      }
+      if (rect.x + dx < 0) {
+        dx = -rect.x;
+        dy = dx / aspectRatio;
+      }
+      if (rect.y + dy < 0) {
+        dy = -rect.y;
+        dx = dy * aspectRatio;
+      }
+
+      rect.w = dx;
+      rect.h = dy;
+      draw();
+    }
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    if (isDrawing) {
+      // Make width/height positive and adjust x,y accordingly
+      if (rect.w < 0) {
+        rect.x += rect.w;
+        rect.w = -rect.w;
+      }
+      if (rect.h < 0) {
+        rect.y += rect.h;
+        rect.h = -rect.h;
+      }
+    }
+    drag = false;
+    isDrawing = false;
+    updateForm();
+  });
+
+  canvas.addEventListener('mouseout', e => {
+    drag = false;
+    isDrawing = false;
+  });
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    if (rect) {
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6]);
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+  }
+
+  function updateForm() {
+    if (!rect) return;
+    document.getElementById('crop_x').value = Math.round(rect.x);
+    document.getElementById('crop_y').value = Math.round(rect.y);
+    document.getElementById('crop_w').value = Math.round(rect.w);
+    document.getElementById('crop_h').value = Math.round(rect.h);
+    document.getElementById('crop-info').textContent =
+      `Crop area: ${Math.round(rect.w)} x ${Math.round(rect.h)} px`;
+  }
+
+  function pointInRect(x, y, r) {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+};
+</script>
+{% endif %}
 </body>
 </html>
 """
@@ -180,7 +264,6 @@ def index():
         path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(path)
 
-        # Store input params for next step
         target_kb = request.form.get("target_kb", "15")
         width_cm = request.form.get("width_cm", "6")
         height_cm = request.form.get("height_cm", "2")
