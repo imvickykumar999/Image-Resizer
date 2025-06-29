@@ -7,13 +7,56 @@ class ImageCropper:
     def __init__(self, root, image_path):
         self.root = root
         self.root.title("Image Cropper")
-        self.root.geometry("800x600")
+        self.image_path = image_path
+        self.get_user_inputs()
 
-        self.image = Image.open(image_path)
+    def get_user_inputs(self):
+        self.input_window = tk.Toplevel(self.root)
+        self.input_window.title("Enter Image Output Settings")
+        self.input_window.geometry("300x250")
+
+        tk.Label(self.input_window, text="Target File Size (KB):").pack()
+        self.size_entry = tk.Entry(self.input_window)
+        self.size_entry.insert(0, "15")
+        self.size_entry.pack()
+
+        tk.Label(self.input_window, text="Width (cm):").pack()
+        self.width_entry = tk.Entry(self.input_window)
+        self.width_entry.insert(0, "6")
+        self.width_entry.pack()
+
+        tk.Label(self.input_window, text="Height (cm):").pack()
+        self.height_entry = tk.Entry(self.input_window)
+        self.height_entry.insert(0, "2")
+        self.height_entry.pack()
+
+        tk.Label(self.input_window, text="DPI:").pack()
+        self.dpi_entry = tk.Entry(self.input_window)
+        self.dpi_entry.insert(0, "300")
+        self.dpi_entry.pack()
+
+        tk.Button(self.input_window, text="Next", command=self.setup_canvas).pack(pady=10)
+
+    def setup_canvas(self):
+        # Read values
+        try:
+            self.target_kb = int(self.size_entry.get())
+            self.width_cm = float(self.width_entry.get())
+            self.height_cm = float(self.height_entry.get())
+            self.dpi = int(self.dpi_entry.get())
+        except ValueError:
+            messagebox.showerror("Error", "Invalid input values.")
+            return
+
+        self.aspect_ratio = self.width_cm / self.height_cm
+        self.input_window.destroy()
+
+        # Load image
+        self.image = Image.open(self.image_path)
         self.tk_image = ImageTk.PhotoImage(self.image)
 
-        # Scrollable Canvas Setup
-        self.outer_frame = tk.Frame(root)
+        # Scrollable canvas
+        self.outer_frame = tk.Frame(self.root)
         self.outer_frame.pack(fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(self.outer_frame, bg='gray')
@@ -30,15 +73,15 @@ class ImageCropper:
         self.canvas_image = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
         self.canvas.config(scrollregion=(0, 0, self.image.width, self.image.height))
 
+        # Mouse bindings
+        self.start_x = self.start_y = self.rect = None
+        self.crop_coords = None
         self.canvas.bind("<ButtonPress-1>", self.on_button_press)
         self.canvas.bind("<B1-Motion>", self.on_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
 
-        self.crop_button = tk.Button(root, text="Crop and Continue", command=self.crop_image)
+        self.crop_button = tk.Button(self.root, text="Crop and Save", command=self.process_crop)
         self.crop_button.pack(pady=5)
-
-        self.start_x = self.start_y = self.rect = None
-        self.crop_coords = None
 
     def on_button_press(self, event):
         self.start_x = self.canvas.canvasx(event.x)
@@ -50,79 +93,53 @@ class ImageCropper:
     def on_drag(self, event):
         cur_x = self.canvas.canvasx(event.x)
         cur_y = self.canvas.canvasy(event.y)
-        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
+
+        # Constrain to aspect ratio
+        dx = cur_x - self.start_x
+        dy = cur_y - self.start_y
+
+        if abs(dx) > abs(dy):
+            dy = dx / self.aspect_ratio
+        else:
+            dx = dy * self.aspect_ratio
+
+        new_x = self.start_x + dx
+        new_y = self.start_y + dy
+
+        self.canvas.coords(self.rect, self.start_x, self.start_y, new_x, new_y)
 
     def on_release(self, event):
-        end_x = self.canvas.canvasx(event.x)
-        end_y = self.canvas.canvasy(event.y)
-        self.crop_coords = (int(min(self.start_x, end_x)), int(min(self.start_y, end_y)),
-                            int(max(self.start_x, end_x)), int(max(self.start_y, end_y)))
+        coords = self.canvas.coords(self.rect)
+        self.crop_coords = tuple(map(int, coords))
 
-    def crop_image(self):
+    def process_crop(self):
         if not self.crop_coords:
             messagebox.showerror("Error", "No crop area selected!")
             return
-        self.cropped_img = self.image.crop(self.crop_coords)
-        self.show_input_window()
 
-    def show_input_window(self):
-        win = tk.Toplevel(self.root)
-        win.title("Resize and Compress Options")
-        win.geometry("300x250")
+        cropped = self.image.crop(self.crop_coords)
 
-        tk.Label(win, text="Target File Size (KB):").pack()
-        size_entry = tk.Entry(win)
-        size_entry.insert(0, "15")
-        size_entry.pack()
+        # Resize
+        px_width = int((self.dpi / 2.54) * self.width_cm)
+        px_height = int((self.dpi / 2.54) * self.height_cm)
+        resized = cropped.resize((px_width, px_height), Image.Resampling.LANCZOS)
 
-        tk.Label(win, text="Width (cm):").pack()
-        width_entry = tk.Entry(win)
-        width_entry.insert(0, "6")
-        width_entry.pack()
+        # Compress to target size
+        quality = 95
+        while quality > 10:
+            buffer = io.BytesIO()
+            resized.save(buffer, format="JPEG", quality=quality, dpi=(self.dpi, self.dpi))
+            kb_size = len(buffer.getvalue()) / 1024
+            if kb_size <= self.target_kb:
+                with open("images/final_output.jpg", "wb") as f:
+                    f.write(buffer.getvalue())
+                messagebox.showinfo("Success", f"Saved as images/final_output.jpg\nSize: {int(kb_size)} KB")
+                return
+            quality -= 5
 
-        tk.Label(win, text="Height (cm):").pack()
-        height_entry = tk.Entry(win)
-        height_entry.insert(0, "2")
-        height_entry.pack()
-
-        tk.Label(win, text="DPI:").pack()
-        dpi_entry = tk.Entry(win)
-        dpi_entry.insert(0, "300")
-        dpi_entry.pack()
-
-        def process():
-            try:
-                target_kb = int(size_entry.get())
-                width_cm = float(width_entry.get())
-                height_cm = float(height_entry.get())
-                dpi = int(dpi_entry.get())
-
-                width_px = int((dpi / 2.54) * width_cm)
-                height_px = int((dpi / 2.54) * height_cm)
-
-                # Resize with stretching
-                resized = self.cropped_img.resize((width_px, height_px), Image.Resampling.LANCZOS)
-
-                # Compress to target KB
-                quality = 95
-                while quality > 10:
-                    buffer = io.BytesIO()
-                    resized.save(buffer, format="JPEG", quality=quality, dpi=(dpi, dpi))
-                    kb_size = len(buffer.getvalue()) / 1024
-                    if kb_size <= target_kb:
-                        with open("final_output.jpg", "wb") as f:
-                            f.write(buffer.getvalue())
-                        messagebox.showinfo("Success", f"Saved as final_output.jpg\nSize: {int(kb_size)} KB")
-                        return
-                    quality -= 5
-
-                messagebox.showwarning("Warning", "Could not compress to target size.")
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-
-        tk.Button(win, text="Save Final Image", command=process).pack(pady=10)
+        messagebox.showwarning("Warning", "Could not compress to target size.")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ImageCropper(root, "input.jpg")
+    app = ImageCropper(root, "images/input.jpg")
     root.mainloop()
