@@ -94,6 +94,22 @@ canvas {
   color: #555;
   margin-top: 10px;
 }
+
+.loader {
+  border: 6px solid #f3f3f3;
+  border-top: 6px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 </style>
 </head>
 <body>
@@ -125,8 +141,14 @@ canvas {
   </form>
 
   {% if img_url %}
+
   <h3>Crop the image</h3>
-  <canvas id="canvas"></canvas>
+  <div id="canvas-container" style="position: relative; width: 100%; min-height: 300px;">
+    <div id="spinner" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10;">
+      <div class="loader"></div>
+    </div>
+    <canvas id="canvas" style="display: none;"></canvas>
+  </div>
   <div id="crop-info">Drag to select area. Aspect ratio is fixed. Touch supported.</div>
 
   <form method="post" action="{{ url_for('crop') }}">
@@ -288,6 +310,32 @@ function updateForm() {
 function pointInRect(x, y, r) {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
+
+img.onload = () => {
+  const spinner = document.getElementById('spinner');
+  const canvasEl = document.getElementById('canvas');
+
+  canvas.width = img.width;
+  canvas.height = img.height;
+  draw();
+
+  // Hide spinner and show canvas
+  spinner.style.display = "none";
+  canvasEl.style.display = "block";
+
+  canvas.addEventListener('mousedown', handleStart);
+  canvas.addEventListener('mousemove', handleMove);
+  canvas.addEventListener('mouseup', handleEnd);
+  canvas.addEventListener('mouseout', handleEnd);
+
+  canvas.addEventListener('touchstart', e => handleStart(e.touches[0]));
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    handleMove(e.touches[0]);
+  }, { passive: false });
+  canvas.addEventListener('touchend', handleEnd);
+};
+
 </script>
 {% endif %}
 </div>
@@ -355,6 +403,9 @@ def crop():
     px_width = int((dpi / 2.54) * width_cm)
     px_height = int((dpi / 2.54) * height_cm)
     resized = cropped.resize((px_width, px_height), Image.Resampling.LANCZOS)
+
+    if resized.mode == 'RGBA':
+        resized = resized.convert('RGB')
 
     quality = 95
     buffer = io.BytesIO()
