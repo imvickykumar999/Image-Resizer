@@ -2,7 +2,7 @@
 
     One solution to avoid SSC student filteration strategy.
 
-![image](https://github.com/user-attachments/assets/41880e8d-e847-449e-9908-d78d1f84c5e9)
+![image](https://github.com/user-attachments/assets/170e76b6-1a29-4e08-b796-4983bfa94139)
 
 ### 📌 **1. DPI (Dots Per Inch)**
 
